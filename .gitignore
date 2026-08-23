@@ -17,3 +17,7 @@ training/record_export/*.json
 training/**/__pycache__/
 training/.venv/
 training/saved_model/
+
+# Large MediaPipe binaries, restored by scripts/fetch-models.sh
+public/wasm/
+public/models/hand_landmarker.task

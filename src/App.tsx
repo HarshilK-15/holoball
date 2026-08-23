@@ -1,6 +1,10 @@
 import { useEffect, useRef } from "react";
 import { useHologramStore } from "./state/hologramStore";
-import { createHandLandmarker, startCamera } from "./vision/handLandmarker";
+import {
+  createHandLandmarker,
+  describeCameraError,
+  startCamera,
+} from "./vision/handLandmarker";
 import { CameraController } from "./vision/cameraController";
 import { loadClassifier } from "./vision/gestureClassifier";
 import { HologramScene } from "./three/hologramScene";
@@ -19,27 +23,40 @@ export default function App() {
     let cancelled = false;
 
     (async () => {
+      // Kept as separate steps so the failure message names the real cause.
+      // Lumping these together reports a model download failure as a camera
+      // problem, which sends you looking in the wrong place.
       try {
         await startCamera(video);
-        const landmarker = await createHandLandmarker();
-        if (cancelled) return;
+      } catch (err) {
+        patch({ cameraError: describeCameraError(err) });
+        return;
+      }
+      if (cancelled) return;
 
-        void loadClassifier();
-        const controller = new CameraController(landmarker, video);
-        scene = new HologramScene(canvas);
-        scene.start();
-
-        const pump = (t: number) => {
-          raf = requestAnimationFrame(pump);
-          controller.processFrame(t);
-        };
-        raf = requestAnimationFrame(pump);
+      let landmarker;
+      try {
+        landmarker = await createHandLandmarker();
       } catch (err) {
         patch({
-          cameraError:
-            err instanceof Error ? err.message : "Could not start the camera",
+          cameraError: `Hand tracking failed to load. ${
+            err instanceof Error ? err.message : "Unknown error."
+          }`,
         });
+        return;
       }
+      if (cancelled) return;
+
+      void loadClassifier();
+      const controller = new CameraController(landmarker, video);
+      scene = new HologramScene(canvas);
+      scene.start();
+
+      const pump = (t: number) => {
+        raf = requestAnimationFrame(pump);
+        controller.processFrame(t);
+      };
+      raf = requestAnimationFrame(pump);
     })();
 
     return () => {
