@@ -1,0 +1,47 @@
+/* Hallmark · component: hud-overlay · genre: atmospheric · theme: instrument
+ * type: Barlow Condensed + IBM Plex Mono · accent: phosphor cyan
+ * pre-emit critique: P5 H5 E4 S5 R5 V4
+ */
+
+:root {
+  /* Paper and ink */
+  --color-void: oklch(8% 0.012 240);
+  --color-phosphor: oklch(87% 0.084 185);
+  --color-blueprint: oklch(87% 0.014 220);
+  --color-amber: oklch(78% 0.142 55);
+  --color-dim: oklch(38% 0.018 235);
+
+  /* Derived surfaces. Declared here so nothing improvises mid-render. */
+  --color-plate: oklch(12% 0.014 240 / 0.62);
+  --color-hairline: oklch(87% 0.014 220 / 0.22);
+  --color-hairline-live: oklch(87% 0.084 185 / 0.45);
+  --color-scrim-top: oklch(8% 0.012 240 / 0.55);
+  --color-scrim-bottom: oklch(8% 0.012 240 / 0.6);
+
+  /* Type */
+  --font-label: "Barlow Condensed", ui-sans-serif, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --text-micro: 0.625rem;
+  --text-label: 0.6875rem;
+  --text-value: 0.8125rem;
+  --text-title: 1.0625rem;
+
+  --track-label: 0.16em;
+  --track-title: 0.28em;
+
+  /* 4pt scale */
+  --space-2xs: 0.25rem;
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+
+  --rule-hair: 1px;
+  --dur-short: 140ms;
+  --dur-med: 260ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --z-hud: 30;
+}

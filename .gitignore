@@ -1,0 +1,19 @@
+node_modules
+dist
+.DS_Store
+*.local
+.vercel
+*.tsbuildinfo
+
+# Iron Man reference frames, kept locally for design reference only
+ref_image_*.png
+ref_image_*.jpg
+
+# Private build notes, not for the public repo
+README.private.md
+
+# Recorded training clips and Python artifacts
+training/record_export/*.json
+training/**/__pycache__/
+training/.venv/
+training/saved_model/

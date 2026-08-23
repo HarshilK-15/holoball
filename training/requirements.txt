@@ -1,0 +1,4 @@
+tensorflow>=2.16
+tensorflowjs>=4.22
+scikit-learn>=1.5
+numpy>=1.26
