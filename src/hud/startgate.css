@@ -1,0 +1,142 @@
+/* Hallmark · component: start-gate · genre: atmospheric · theme: instrument
+ * states: default · hover · focus-visible · active · disabled · busy · error
+ */
+
+.gate {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-hud);
+  display: grid;
+  place-items: center;
+  padding: var(--space-lg);
+  background: var(--color-void);
+  font-family: var(--font-label);
+  color: var(--color-blueprint);
+}
+
+.gate__panel {
+  width: min(30rem, 100%);
+  padding: var(--space-xl);
+  border: var(--rule-hair) solid var(--color-hairline);
+  border-left: 2px solid var(--color-phosphor);
+  background: var(--color-plate);
+}
+
+.gate__wordmark {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 600;
+  font-style: normal;
+  letter-spacing: var(--track-title);
+  text-transform: uppercase;
+  line-height: 1;
+  overflow-wrap: anywhere;
+}
+
+.gate__lede {
+  margin-top: var(--space-md);
+  max-width: 48ch;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  line-height: 1.7;
+  color: var(--color-dim);
+}
+
+.gate__moves {
+  margin: var(--space-lg) 0 0;
+  border-top: var(--rule-hair) solid var(--color-hairline);
+}
+
+.gate__move {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-xs) 0;
+  border-bottom: var(--rule-hair) solid var(--color-hairline);
+}
+
+.gate__move dt {
+  font-size: var(--text-label);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--color-blueprint);
+}
+
+.gate__move dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--color-phosphor);
+}
+
+.gate__error {
+  margin-top: var(--space-md);
+  padding: var(--space-sm);
+  border-left: 2px solid var(--color-amber);
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  line-height: 1.6;
+  color: var(--color-amber);
+  overflow-wrap: anywhere;
+}
+
+.gate__start {
+  margin-top: var(--space-lg);
+  width: 100%;
+  padding: var(--space-sm) var(--space-md);
+  border: var(--rule-hair) solid var(--color-phosphor);
+  background: transparent;
+  color: var(--color-phosphor);
+  font-family: var(--font-label);
+  font-size: var(--text-value);
+  font-weight: 600;
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-short) var(--ease-out),
+    color var(--dur-short) var(--ease-out),
+    transform 100ms var(--ease-out);
+}
+
+.gate__start:hover {
+  background: var(--color-phosphor);
+  color: var(--color-void);
+}
+
+/* Never transitioned: a ring that fades in leaves keyboard users with nothing. */
+.gate__start:focus-visible {
+  outline: 2px solid var(--color-phosphor);
+  outline-offset: 3px;
+}
+
+.gate__start:active {
+  transform: translateY(1px);
+}
+
+.gate__start:disabled {
+  border-color: var(--color-dim);
+  color: var(--color-dim);
+  cursor: progress;
+}
+
+.gate__note {
+  margin-top: var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  text-align: center;
+  color: var(--color-dim);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gate__start { transition-duration: 1ms; }
+}
+
+@media (max-width: 480px) {
+  .gate__panel { padding: var(--space-md); }
+  .gate__wordmark { font-size: 1.375rem; }
+}

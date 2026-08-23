@@ -3,7 +3,7 @@ import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
-import { TIMING } from "../state/types";
+import { FOLLOW, TIMING } from "../state/types";
 import { runtime, useHologramStore } from "../state/hologramStore";
 import { tickStateMachine } from "../state/stateMachine";
 import { HologramBall } from "./hologramBall";
@@ -11,6 +11,12 @@ import { worldPosition } from "./worldMapping";
 
 const FOV = 55;
 const BALL_DEPTH = 6;
+
+const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
+
+/** Rebases a per-frame-at-60fps easing rate onto the actual frame time. */
+const frameRateSafe = (rate: number, dt: number): number =>
+  1 - Math.pow(1 - rate, Math.min(dt, 0.1) * 60);
 
 export class HologramScene {
   private renderer: THREE.WebGLRenderer;
@@ -84,7 +90,10 @@ export class HologramScene {
 
   private frame(): void {
     const dt = this.clock.getDelta();
-    const now = this.clock.getElapsedTime();
+    // Must match the clock the camera loop stamps modeStart with. THREE.Clock
+    // starts at zero on construction, so mixing the two makes animation
+    // progress start at a large negative number and crawl.
+    const now = performance.now() / 1000;
     tickStateMachine(now);
 
     const mode = useHologramStore.getState().mode;
@@ -102,18 +111,23 @@ export class HologramScene {
     );
 
     if (mode === "spawning") {
-      const p = Math.min(1, (now - runtime.modeStart) / TIMING.spawnDuration);
+      const p = clamp01((now - runtime.modeStart) / TIMING.spawnDuration);
       const eased = 1 - Math.pow(1 - p, 3);
       runtime.currentScale = eased * runtime.targetScale;
       runtime.currentPosition = runtime.targetPosition;
       this.ball.root.position.set(target.x, target.y, 0);
       this.ball.root.scale.setScalar(Math.max(0.001, runtime.currentScale));
     } else if (mode === "active") {
+      // Converted from a per-frame rate to a time-based one, so tracking feels
+      // the same at 30fps as at 60. A raw per-frame lerp halves its speed when
+      // the frame rate halves, which is exactly when it is already lagging.
+      const posK = frameRateSafe(FOLLOW.position, dt);
+      const scaleK = frameRateSafe(FOLLOW.scale, dt);
       runtime.currentPosition = {
-        x: runtime.currentPosition.x + (runtime.targetPosition.x - runtime.currentPosition.x) * 0.22,
-        y: runtime.currentPosition.y + (runtime.targetPosition.y - runtime.currentPosition.y) * 0.22,
+        x: runtime.currentPosition.x + (runtime.targetPosition.x - runtime.currentPosition.x) * posK,
+        y: runtime.currentPosition.y + (runtime.targetPosition.y - runtime.currentPosition.y) * posK,
       };
-      runtime.currentScale += (runtime.targetScale - runtime.currentScale) * 0.18;
+      runtime.currentScale += (runtime.targetScale - runtime.currentScale) * scaleK;
       const pos = worldPosition(
         runtime.currentPosition,
         viewAspect,
@@ -124,7 +138,7 @@ export class HologramScene {
       this.ball.root.position.set(pos.x, pos.y, 0);
       this.ball.root.scale.setScalar(Math.max(0.001, runtime.currentScale));
     } else if (mode === "trapped") {
-      const p = Math.min(1, (now - runtime.modeStart) / TIMING.trapDuration);
+      const p = clamp01((now - runtime.modeStart) / TIMING.trapDuration);
       const s = runtime.trapStartScale;
       this.ball.root.scale.set(
         Math.max(0.001, s * (1 - p * 0.75)),

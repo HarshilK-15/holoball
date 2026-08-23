@@ -3,15 +3,29 @@ import { GESTURE, LM, type Vec2 } from "../state/types";
 export type Landmark = { x: number; y: number; z: number };
 export type Hand = Landmark[];
 
+/**
+ * Midpoint of the palm. Averaging the wrist with the knuckles evenly drags the
+ * point down toward the heel of the hand, so the ball sits noticeably lower
+ * than where you feel your palm to be. Weighting the knuckles higher puts it
+ * where the hand looks centred.
+ */
 export function palmCenter(hand: Hand): Vec2 {
-  const pts = [LM.wrist, LM.indexMCP, LM.middleMCP, LM.ringMCP, LM.littleMCP];
-  let x = 0;
-  let y = 0;
-  for (const i of pts) {
-    x += hand[i].x;
-    y += hand[i].y;
+  const knuckles = [LM.indexMCP, LM.middleMCP, LM.ringMCP, LM.littleMCP];
+  let kx = 0;
+  let ky = 0;
+  for (const i of knuckles) {
+    kx += hand[i].x;
+    ky += hand[i].y;
   }
-  return { x: x / pts.length, y: y / pts.length };
+  kx /= knuckles.length;
+  ky /= knuckles.length;
+
+  const wrist = hand[LM.wrist];
+  const wristWeight = 0.3;
+  return {
+    x: kx * (1 - wristWeight) + wrist.x * wristWeight,
+    y: ky * (1 - wristWeight) + wrist.y * wristWeight,
+  };
 }
 
 /** Normalized coordinates are not square, so x needs the aspect correction. */

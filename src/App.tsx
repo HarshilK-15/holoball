@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useHologramStore } from "./state/hologramStore";
 import {
   createHandLandmarker,
@@ -9,70 +9,75 @@ import { CameraController } from "./vision/cameraController";
 import { loadClassifier } from "./vision/gestureClassifier";
 import { HologramScene } from "./three/hologramScene";
 import { HUDOverlay } from "./hud/HUDOverlay";
+import { StartGate } from "./hud/StartGate";
 
 export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const sceneRef = useRef<HologramScene | null>(null);
+  const rafRef = useRef(0);
+  const [started, setStarted] = useState(false);
+  const [starting, setStarting] = useState(false);
   const patch = useHologramStore((s) => s.patch);
 
-  useEffect(() => {
+  // Safari rejects getUserMedia with AbortError unless it runs inside a user
+  // gesture, so this is deliberately click driven rather than an effect.
+  const begin = useCallback(async () => {
     const video = videoRef.current!;
     const canvas = canvasRef.current!;
-    let scene: HologramScene | null = null;
-    let raf = 0;
-    let cancelled = false;
+    setStarting(true);
+    patch({ cameraError: null });
 
-    (async () => {
-      // Kept as separate steps so the failure message names the real cause.
-      // Lumping these together reports a model download failure as a camera
-      // problem, which sends you looking in the wrong place.
-      try {
-        await startCamera(video);
-      } catch (err) {
-        patch({ cameraError: describeCameraError(err) });
-        return;
-      }
-      if (cancelled) return;
+    try {
+      await startCamera(video);
+    } catch (err) {
+      patch({ cameraError: describeCameraError(err) });
+      setStarting(false);
+      return;
+    }
 
-      let landmarker;
-      try {
-        landmarker = await createHandLandmarker();
-      } catch (err) {
-        patch({
-          cameraError: `Hand tracking failed to load. ${
-            err instanceof Error ? err.message : "Unknown error."
-          }`,
-        });
-        return;
-      }
-      if (cancelled) return;
+    let landmarker;
+    try {
+      landmarker = await createHandLandmarker();
+    } catch (err) {
+      patch({
+        cameraError: `Hand tracking failed to load. ${
+          err instanceof Error ? err.message : "Unknown error."
+        }`,
+      });
+      setStarting(false);
+      return;
+    }
 
-      void loadClassifier();
-      const controller = new CameraController(landmarker, video);
-      scene = new HologramScene(canvas);
-      scene.start();
+    void loadClassifier();
+    const controller = new CameraController(landmarker, video);
+    sceneRef.current = new HologramScene(canvas);
+    sceneRef.current.start();
 
-      const pump = (t: number) => {
-        raf = requestAnimationFrame(pump);
-        controller.processFrame(t);
-      };
-      raf = requestAnimationFrame(pump);
-    })();
+    const pump = (t: number) => {
+      rafRef.current = requestAnimationFrame(pump);
+      controller.processFrame(t);
+    };
+    rafRef.current = requestAnimationFrame(pump);
 
+    setStarting(false);
+    setStarted(true);
+  }, [patch]);
+
+  useEffect(() => {
     return () => {
-      cancelled = true;
-      cancelAnimationFrame(raf);
-      scene?.stop();
-      const stream = video.srcObject as MediaStream | null;
+      cancelAnimationFrame(rafRef.current);
+      sceneRef.current?.stop();
+      const stream = videoRef.current?.srcObject as MediaStream | null;
       stream?.getTracks().forEach((t) => t.stop());
     };
-  }, [patch]);
+  }, []);
 
   return (
     <div className="stage">
       <video ref={videoRef} className="feed" playsInline muted />
       <canvas ref={canvasRef} className="ball" />
-      <HUDOverlay />
+      {started ? <HUDOverlay /> : <StartGate onStart={begin} busy={starting} />}
     </div>
   );
 }
