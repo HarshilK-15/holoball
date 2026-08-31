@@ -1,48 +1,58 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { useHologramStore } from "../state/hologramStore";
-import { GESTURE } from "../state/types";
-import "@fontsource/barlow-condensed/400.css";
-import "@fontsource/barlow-condensed/600.css";
+import { GESTURE, SQUASH } from "../state/types";
+import "@fontsource/tomorrow/500.css";
+import "@fontsource/tomorrow/600.css";
 import "@fontsource/ibm-plex-mono/400.css";
 import "./tokens.css";
 import "./hud.css";
 
-function RegistrationMark({ corner }: { corner: "tl" | "tr" | "bl" | "br" }) {
+/** Staggers the reveal by DOM order without a line of JS timing. */
+const step = (i: number) => ({ "--i": i }) as CSSProperties;
+
+function Row({ label, value, tone }: { label: string; value: string; tone?: "live" | "power" }) {
   return (
-    <svg
-      className={`hud__reg hud__reg--${corner}`}
-      viewBox="0 0 26 26"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1"
-      aria-hidden="true"
-    >
-      <circle cx="13" cy="13" r="5.5" />
-      <path d="M13 0v7M13 19v7M0 13h7M19 13h7" />
-    </svg>
+    <div className="hud__row">
+      <span className="hud__key">{label}</span>
+      <span className={`hud__val${tone ? ` hud__val--${tone}` : ""}`}>{value}</span>
+    </div>
   );
 }
 
+/**
+ * A caliper, not a progress bar. The tick sits on a dimension line with end
+ * stops, the way a measured span is drawn rather than the way a download is.
+ */
 function Caliper({ label, value, max }: { label: string; value: number; max: number }) {
-  const pct = Math.max(0, Math.min(1, value / max)) * 100;
+  // Passed as a 0..1 ratio rather than a width, because the bar and its end
+  // stop are driven by transforms. Animating inline-size would put a layout
+  // pass on every frame of a readout that updates at camera rate.
+  const fill = Math.max(0, Math.min(1, value / max));
   return (
     <div className="hud__caliper">
       <div className="hud__caliperhead">
         <span className="hud__key">{label}</span>
-        <span className="hud__val hud__val--live">{value.toFixed(3)}</span>
+        <span className="hud__val">{value.toFixed(3)}</span>
       </div>
-      <div className="hud__calipertrack">
-        <div className="hud__caliperfill" style={{ inlineSize: `${pct}%` }} />
+      <div className="hud__calipertrack" style={{ "--fill": fill } as CSSProperties} aria-hidden="true">
+        <span className="hud__caliperfill" />
+        <span className="hud__calipertick" />
       </div>
     </div>
   );
 }
 
 const MODE_PROMPT: Record<string, string> = {
-  hidden: "Clap twice to summon",
+  hidden: "Make a fist, then open your hand to summon",
   spawning: "Materialising",
-  active: "Move to steer, pinch to scale, fist to charge",
+  active: "Move to steer, pinch to scale, fist both hands to carry",
   trapped: "Collapsing",
+};
+
+const CARRY_PROMPT: Record<string, string> = {
+  follow: "Pinch and turn one hand to spin it, fist to charge",
+  carried: "Carrying — open a hand to set it down",
+  parked: "Set down — reach for it to pick it up",
 };
 
 export function HUDOverlay() {
@@ -66,86 +76,85 @@ export function HUDOverlay() {
   if (s.cameraError) {
     return (
       <div className="hud">
-        <div className="hud__plate hud__error">
-          <div className="hud__errortitle">Camera unavailable</div>
-          <p className="hud__errorbody">{s.cameraError}</p>
+        <div className="hud__bezel hud__bezel--alert" aria-hidden="true" />
+        <div className="hud__fault" role="alert">
+          <p className="hud__faulthead">Camera unavailable</p>
+          <p className="hud__faultbody">{s.cameraError}</p>
         </div>
       </div>
     );
   }
 
-  const prompt = s.awaitingSecondClap ? "Awaiting second clap" : MODE_PROMPT[s.mode];
-  const armed = s.awaitingSecondClap || s.armed;
+  const prompt = s.bloomArmed
+    ? "Fist held — open your hand"
+    : s.mode === "active"
+      ? CARRY_PROMPT[s.carry]
+      : MODE_PROMPT[s.mode];
 
   return (
     <div className="hud">
-      <RegistrationMark corner="tl" />
-      <RegistrationMark corner="tr" />
-      <RegistrationMark corner="bl" />
-      <RegistrationMark corner="br" />
+      <div className="hud__bezel" aria-hidden="true" />
 
-      <div className="hud__plate hud__title">
-        <h1 className="hud__wordmark">Holoball</h1>
-        <div className="hud__subtitle">Gesture instrument</div>
-      </div>
-
-      <div className="hud__plate hud__stamp">
-        <div className="hud__clock">{clock}</div>
-        <div className="hud__sheet">Local session</div>
-      </div>
-
-      <div className="hud__plate hud__status">
-        <div className="hud__group">
-          <div className="hud__grouphead">Status</div>
-          <div className="hud__row">
-            <span className="hud__key">Mode</span>
-            <span className={`hud__val ${s.mode === "active" ? "hud__val--live" : ""}`}>
-              {s.mode.toUpperCase()}
-            </span>
-          </div>
-          <div className="hud__row">
-            <span className="hud__key">Hands</span>
-            <span className="hud__val">{String(s.handCount).padStart(2, "0")}</span>
-          </div>
-          <div className="hud__row">
-            <span className="hud__key">Signal</span>
-            <span className="hud__val">{s.gestureLabel}</span>
-          </div>
-          <div className="hud__row">
-            <span className="hud__key">FPS</span>
-            <span className="hud__val">{String(s.fps).padStart(2, "0")}</span>
-          </div>
+      <header className="hud__topbar" style={step(0)}>
+        <div className="hud__brand">
+          <h1 className="hud__wordmark">Holoball</h1>
+          <p className="hud__sub">Gesture instrument</p>
         </div>
-      </div>
-
-      <div className="hud__plate hud__telemetry">
-        <div className="hud__group">
-          <div className="hud__grouphead">Telemetry</div>
-          <div className="hud__row">
-            <span className="hud__key">Scale</span>
-            <span className="hud__val">{s.scaleReadout.toFixed(3)}</span>
-          </div>
-          <div className="hud__row">
-            <span className="hud__key">Power</span>
-            <span className={`hud__val ${s.powerReadout > 0.05 ? "hud__val--power" : ""}`}>
-              {s.powerReadout.toFixed(3)}
-            </span>
-          </div>
-          <div className="hud__row">
-            <span className="hud__key">Claps</span>
-            <span className="hud__val">{String(s.clapCount).padStart(3, "0")}</span>
-          </div>
+        <div className="hud__meta">
+          <span className="hud__clock">{clock}</span>
+          <span className="hud__sub">Local session</span>
         </div>
-      </div>
+      </header>
 
-      <div className="hud__plate hud__calipers">
-        <Caliper label="Spread" value={s.spreadReadout} max={GESTURE.clapOpenThreshold * 2} />
-        <Caliper label="Pinch" value={s.pinchReadout} max={GESTURE.pinchMaxDistance} />
-      </div>
+      <section className="hud__spine hud__spine--left" style={step(1)}>
+        <h2 className="hud__spinehead">Status</h2>
+        <Row
+          label="Mode"
+          value={s.mode.toUpperCase()}
+          tone={s.mode === "active" ? "live" : undefined}
+        />
+        <Row label="Hands" value={String(s.handCount).padStart(2, "0")} />
+        <Row label="Signal" value={s.gestureLabel} />
+        <Row label="Rate" value={`${String(s.fps).padStart(2, "0")} FPS`} />
+      </section>
 
-      <div className={`hud__prompt ${armed ? "hud__prompt--armed" : ""}`}>
-        <span className={`hud__pip ${armed ? "hud__pip--pulse" : ""}`} />
+      <section className="hud__spine hud__spine--right" style={step(2)}>
+        <h2 className="hud__spinehead">Telemetry</h2>
+        <Row label="Scale" value={s.scaleReadout.toFixed(2)} />
+        <Row
+          label="Power"
+          value={s.powerReadout.toFixed(2)}
+          tone={s.powerReadout > 0.05 ? "power" : undefined}
+        />
+        <Row
+          label="Grip"
+          value={s.gripReadout ? "HELD" : "—"}
+          tone={s.gripReadout ? "live" : undefined}
+        />
+        <Row label="Events" value={String(s.gestureCount).padStart(3, "0")} />
+        <Row label="Reach" value={s.carry === "parked" ? s.reachReadout.toFixed(2) : "—"} />
+      </section>
+
+      <p className={`hud__prompt${s.armed ? " hud__prompt--armed" : ""}`} style={step(3)}>
+        <span className={`hud__pip${s.armed ? " hud__pip--pulse" : ""}`} aria-hidden="true" />
         {prompt}
+      </p>
+
+      <div className="hud__deck" style={step(4)}>
+        <div className="hud__calipers">
+          <Caliper label="Open" value={s.curlReadout} max={1} />
+          <Caliper label="Spread" value={s.spreadReadout} max={1.2} />
+          <Caliper
+            label="Closing"
+            value={Math.max(0, s.closingReadout)}
+            max={SQUASH.minClosingSpeed * 4}
+          />
+          <Caliper label="Pinch" value={s.pinchReadout} max={GESTURE.pinchMaxDistance} />
+        </div>
+        <p className="hud__trigger">
+          <span className="hud__key">Trigger</span>
+          <span className="hud__val">{s.triggerBlockReason}</span>
+        </p>
       </div>
     </div>
   );

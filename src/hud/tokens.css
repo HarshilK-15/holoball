@@ -1,47 +1,81 @@
-/* Hallmark · component: hud-overlay · genre: atmospheric · theme: instrument
- * type: Barlow Condensed + IBM Plex Mono · accent: phosphor cyan
- * pre-emit critique: P5 H5 E4 S5 R5 V4
+/* Design tokens for the HUD and the start gate.
+ *
+ * Every colour and every font in both stylesheets resolves through a name
+ * declared here. The palette is painted over a live camera feed, so the base
+ * is a scrim rather than a page surface and alpha is load-bearing: the HUD has
+ * to stay legible over a bright room and a dark one.
  */
 
 :root {
-  /* Paper and ink */
-  --color-void: oklch(8% 0.012 240);
+  /* ---- Ground -----------------------------------------------------------
+   * This palette is painted over a live camera feed, so the base is a scrim
+   * rather than a page surface. Alpha is load-bearing here, not decoration:
+   * the HUD must stay legible over a bright room and a dark one.
+   */
+  --color-void: oklch(10% 0.013 235);
+  --color-blueprint: oklch(89% 0.012 220);
   --color-phosphor: oklch(87% 0.084 185);
-  --color-blueprint: oklch(87% 0.014 220);
   --color-amber: oklch(78% 0.142 55);
-  --color-dim: oklch(38% 0.018 235);
 
-  /* Derived surfaces. Declared here so nothing improvises mid-render. */
-  --color-plate: oklch(12% 0.014 240 / 0.62);
-  --color-hairline: oklch(87% 0.014 220 / 0.22);
-  --color-hairline-live: oklch(87% 0.084 185 / 0.45);
-  --color-scrim-top: oklch(8% 0.012 240 / 0.55);
-  --color-scrim-bottom: oklch(8% 0.012 240 / 0.6);
+  /* Raised from the previous build's 38%. At that lightness the label text
+   * sat under 4.5:1 against the scrim wherever the feed behind it was bright. */
+  --color-dim: oklch(56% 0.018 230);
+  --color-faint: oklch(40% 0.015 232);
 
-  /* Type */
-  --font-label: "Barlow Condensed", ui-sans-serif, sans-serif;
+  /* ---- Derived surfaces. Declared so nothing improvises mid-render. ---- */
+  --color-scrim-top: oklch(10% 0.013 235 / 0.62);
+  --color-scrim-bottom: oklch(10% 0.013 235 / 0.68);
+  --color-scrim-panel: oklch(10% 0.013 235 / 0.58);
+  --color-hairline: oklch(89% 0.012 220 / 0.15);
+  --color-hairline-strong: oklch(89% 0.012 220 / 0.3);
+  --color-hairline-alert: oklch(78% 0.142 55 / 0.4);
+  --color-tick: oklch(87% 0.084 185 / 0.75);
+  --color-track: oklch(89% 0.012 220 / 0.2);
+  --color-focus: oklch(87% 0.084 185);
+  --color-gate-ground: oklch(8% 0.012 238);
+
+  /* ---- Type -------------------------------------------------------------
+   * Two families. Tomorrow carries the instrument's voice; IBM Plex Mono
+   * carries every number, because a readout that reflows as its digits change
+   * is a readout you cannot glance at.
+   */
+  --font-display: "Tomorrow", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 
   --text-micro: 0.625rem;
   --text-label: 0.6875rem;
   --text-value: 0.8125rem;
+  --text-lede: 0.8125rem;
   --text-title: 1.0625rem;
+  --text-gate: clamp(1.75rem, 4vw + 0.5rem, 2.375rem);
 
-  --track-label: 0.16em;
-  --track-title: 0.28em;
+  --track-label: 0.18em;
+  --track-title: 0.3em;
 
-  /* 4pt scale */
+  /* ---- 4pt scale --------------------------------------------------------- */
+  --space-3xs: 0.125rem;
   --space-2xs: 0.25rem;
   --space-xs: 0.5rem;
   --space-sm: 0.75rem;
   --space-md: 1rem;
   --space-lg: 1.5rem;
   --space-xl: 2rem;
+  --space-2xl: 3rem;
 
   --rule-hair: 1px;
-  --dur-short: 140ms;
-  --dur-med: 260ms;
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Length of the accent bracket at each corner of the bezel. */
+  --bezel-tick: 15px;
 
-  --z-hud: 30;
+  /* ---- Motion ------------------------------------------------------------ */
+  --dur-micro: 120ms;
+  --dur-short: 220ms;
+  --dur-long: 420ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* ---- Named z scale ----------------------------------------------------- */
+  --z-base: 1;
+  --z-hud: 200;
+  --z-gate: 400;
 }

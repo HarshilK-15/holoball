@@ -39,6 +39,43 @@ export function pinchDistance(hand: Hand, imageAspect: number): number {
   return separation(hand[LM.thumbTip], hand[LM.indexTip], imageAspect);
 }
 
+/** Where a pinch actually happens: between the thumb and index tips. */
+export function pinchPoint(hand: Hand): Vec2 {
+  const thumb = hand[LM.thumbTip];
+  const index = hand[LM.indexTip];
+  return { x: (thumb.x + index.x) / 2, y: (thumb.y + index.y) / 2 };
+}
+
+/** 0 when the hand is open, 1 when the fingers have closed on each other. */
+export function pinchStrength(pinch: number): number {
+  const { pinchAnchorTight, pinchAnchorOpen } = GESTURE;
+  const t = (pinchAnchorOpen - pinch) / (pinchAnchorOpen - pinchAnchorTight);
+  const c = Math.max(0, Math.min(1, t));
+  return c * c * (3 - 2 * c);
+}
+
+/**
+ * The point the ball should sit on. Open hand means the palm; as the fingers
+ * close the anchor slides out to the pinch itself, so a pinched ball is held
+ * between your fingertips rather than hovering over your palm.
+ *
+ * A fist is excluded on purpose. Curling the hand puts the thumb tip right
+ * beside the index tip, which reads as a hard pinch, and the anchor would snap
+ * to the knuckles every time you made a fist. Fists mean carry and power, not
+ * pinch, so they keep the palm anchor.
+ */
+export function handAnchor(hand: Hand, imageAspect: number, fisted: boolean): Vec2 {
+  const palm = palmCenter(hand);
+  if (fisted) return palm;
+  const t = pinchStrength(pinchDistance(hand, imageAspect));
+  if (t <= 0) return palm;
+  const tip = pinchPoint(hand);
+  return {
+    x: palm.x + (tip.x - palm.x) * t,
+    y: palm.y + (tip.y - palm.y) * t,
+  };
+}
+
 /** A finger counts as curled when its tip sits closer to the wrist than its knuckle. */
 export function isFist(hand: Hand, imageAspect: number): boolean {
   const wrist = hand[LM.wrist];
@@ -73,6 +110,16 @@ export function fistCurlScore(hand: Hand, imageAspect: number): number {
     score += Math.max(0, Math.min(1, 1 - tipDist / (mcpDist * 1.6)));
   }
   return score / pairs.length;
+}
+
+/**
+ * True when smoothing would teleport rather than glide. The clap detector needs
+ * to know: a hand being re-acquired somewhere else looks exactly like an
+ * enormous closing speed, and that is a false clap waiting to happen.
+ */
+export function isSnap(prev: Vec2 | null, next: Vec2): boolean {
+  if (!prev) return true;
+  return Math.hypot(next.x - prev.x, next.y - prev.y) > GESTURE.smoothingJumpCutoff;
 }
 
 /** Exponential smoothing that snaps instead of gliding on large jumps. */

@@ -17,7 +17,7 @@ V2 is a rewrite rather than a repair. The goal is an app that works, looks like 
 ## 2. Goals
 
 1. Gesture recognition that is materially more accurate than the old version, especially for the clap that opens and closes the hologram.
-2. A complete visual redesign in the Tony Stark holographic style, built with the `hallmark` and `design-taste-frontend` design skills.
+2. A complete visual redesign in the Tony Stark holographic style.
 3. Real hosting. The app runs in a browser at a public URL, using the visitor's camera, instead of only running locally.
 4. A written requirements document, this file.
 5. Two READMEs. One private with the full build explanation, one public for the repository.
@@ -82,9 +82,10 @@ Data flow per frame:
 <video> frame
    → HandLandmarker.detectForVideo()        (MediaPipe, 21 pts × up to 2 hands)
    → handGeometry: palm centers, separation, pinch, fist
-   → clapDetector: threshold + velocity + debounce  → clap candidate
-        → gestureClassifier (TFJS)          only on candidates, not every frame
-        → confirmed clap → stateMachine.triggerHandClap()
+   → bloomDetector  (hidden only): fist held, then opened  → triggerSummon()
+   → squashDetector (active only): palms converging, no contact → triggerDismiss()
+   → clapDetector: spread and closing speed, for telemetry and the recorder
+        → gestureClassifier (TFJS)          recorder pipeline only, not live
    → runtime state (plain object, high frequency fields)
    → Three.js render loop reads state, eases ball position/scale/colour
    → Zustand store (low frequency fields) → React HUD re-renders
@@ -120,49 +121,163 @@ Four modes, ported directly from the old `HologramState.swift`.
 
 | Mode | Meaning | Enters from | Leaves to |
 |---|---|---|---|
-| `hidden` | Nothing on screen, waiting for summon | start, or after `trapped` finishes | `spawning` on a confirmed double clap |
+| `hidden` | Nothing on screen, waiting for summon | start, or after `trapped` finishes | `spawning` when a held fist opens |
 | `spawning` | Ball easing into existence | `hidden` | `active` after 0.45s |
-| `active` | Ball visible and hand controlled | `spawning` | `trapped` on a single clap |
+| `active` | Ball visible and hand controlled | `spawning` | `trapped` when two palms converge |
 | `trapped` | Squash and crush dismiss animation | `active` | `hidden` after 0.42s |
 
 Timing constants, all carried over from the old app as starting points:
 
 | Constant | Value | Meaning |
 |---|---|---|
-| `doubleClapWindow` | 1.5 s | Max gap between the two summon claps |
-| `spawnDuration` | 0.45 s | Spawn ease in |
-| `trapDuration` | 0.42 s | Dismiss animation |
+| `spawnDuration` | 0.40 s | Materialise, staged |
+| `trapDuration` | 0.30 s | Implosion and shockwave |
 
-The summon requires two claps because a single clap is too easy to trigger by accident. Dismissal is a single clap because at that point the ball is already visible and the user's intent is unambiguous.
+**The summon and dismiss animations are staged rather than uniform.** A single
+fade over the same duration reads as the ball merely becoming less transparent.
+Materialising runs the particle cloud inward first, snaps the wireframe skeleton
+on next, and skins the solid core over last, with the rings sweeping out and a
+glow flash peaking as the ball arrives. Scale uses an ease-out with a small
+overshoot, which is what makes it read as snappy rather than just quick.
+
+Both are driven by time alone. An earlier version ratcheted the bloom against
+live hand openness so the ball would follow your fingers, but the hand finishes
+opening about 100ms after the trigger fires, which drove the animation to full
+in roughly three frames. Responsiveness comes from the trigger firing promptly,
+not from the ball chasing finger position. **The dismiss is a uniform implosion, not a squash.** It scales one number, so
+distortion is impossible by construction rather than by tuning. The previous
+version squashed along the palm axis and bulged across it, reaching a 1.4 aspect
+ratio on the way down and then spending a single frame at 72:1 as a vertical
+line, because the across axis was floored at 0.05 and the along axis was not.
+It also idled for the first 67ms before the collapse began, so the ball hung at
+full size and then snapped.
+
+Now the ball shrinks on a smoothstep from the first frame, which has zero rate of
+change at both ends, while the particle cloud is drawn inward and a single
+shockwave ring expands outward through where it used to be. The ring is taller
+than it is wide and `root` is rotated onto the palm axis, so it escapes across
+the squeeze. Everything reaches true zero opacity, so there is no hard cut.
+
+**Why the summon is one gesture now.** It used to take two claps, on the reasoning that a single clap was too easy to trigger by accident. That was sound for a detector that fired on stray movement, but it multiplies one attempt's odds by themselves. Replaying the live detector over the 288 recorded clips put single-clap recall at 51.9%, so summoning was a roughly one in ten proposition end to end. A held fist that then opens is deliberate enough on its own, and the arming dwell is what makes it so.
 
 ## 7. Gesture vocabulary
 
 | Gesture | Detected by | Effect |
 |---|---|---|
-| Two claps within 1.5s while hidden | Both palms converging, confirmed by classifier | Summon the ball |
-| One clap while active | Same detector | Dismiss the ball with a crush animation |
-| Open palm moving | Palm centre position, smoothed | Ball follows the hand |
-| Thumb to index pinch | Distance between landmarks 4 and 8 | Ball scales down as fingers close |
-| Closed fist | Fingertip curl relative to knuckles | Ball charges up, colour shifts cyan to orange |
+| Hold a fist, then open your hand, while hidden | `bloomDetector`, one hand, `isFist` plus curl | Summon the ball, blooming out of your palm |
+| Two open palms converging while active | `squashDetector`, no contact required | Dismiss the ball, crushed between the palms |
+| Open palm moving | Anchor position, smoothed | Ball follows the hand |
+| Thumb to index pinch | Distance between landmarks 4 and 8 | Ball shrinks **and** moves to sit between the fingertips |
+| Pinch and turn one hand | The hand's 3D orientation from `worldLandmarks` | Ball takes your hand's orientation, 1:1, all axes |
+| Two closed fists | Fingertip curl on both hands | Pick the ball up and carry it between your hands |
+| Opening either hand while carrying | Loss of the fist on either side | Set the ball down; it stays where you left it |
+| Reaching toward a set down ball | Anchor inside the pickup radius | Pick it back up; it follows that hand again |
+| One closed fist | Fingertip curl relative to knuckles | Ball charges up, colour shifts cyan to orange |
 
-Tunable constants, carried over as starting values and expected to be retuned against MediaPipe's coordinate space:
+Charging is single hand on purpose. Two fists is the carry grab, and reading that as a charge would light the ball up every time you picked it up.
+
+### The pinch anchor
+
+Pinch used to only drive scale, so the ball stayed hovering over the palm while your fingers closed on nothing. The anchor now blends from the palm centre out to the midpoint of the thumb and index tips as the pinch tightens, so a pinched ball is genuinely held between your fingers.
+
+A fist is excluded from that blend. Curling the hand puts the thumb tip right beside the index tip, which reads as a hard pinch, and without the exclusion the anchor would jump to the knuckles every time you made a fist or carried the ball.
+
+### Carry states
+
+| State | Ball target | Leaves via |
+|---|---|---|
+| `follow` | the tracked hand's anchor, or the midpoint of two open hands | both fists held for `grabDwell` |
+| `carried` | midpoint of the two palms | either hand opens for `releaseGrace`, or a hand is lost |
+| `parked` | fixed, where you set it down | a hand inside the pickup radius for `pickupDwell` |
+
+Every transition has a dwell timer. Fist detection flickers, hands drop out of frame for a frame or two, and a hand hovering at the edge of the pickup radius would otherwise make the ball twitch between states.
+
+Tunable constants:
 
 | Constant | Value | Meaning |
 |---|---|---|
-| `clapOpenThreshold` | 0.55 | Hands must spread past this to arm a clap |
-| `clapCloseThreshold` | 0.42 | Hands closing past this fires the clap |
-| `clapClosingVelocity` | 2.0 /s | Alternative fast close trigger |
-| `clapDebounce` | 0.32 s | Minimum gap between two registered claps |
-| `palmSmoothing` | 0.4 | Exponential smoothing on palm position |
-| `pinchSmoothing` | 0.35 | Exponential smoothing on pinch distance |
-| `pinchMinDistance` | 0.05 | Fully pinched |
-| `pinchMaxDistance` | 0.32 | Fully open |
+| `palmSmoothing` | 0.6 | Exponential smoothing on palm position |
+| `anchorSmoothing` | 0.55 | Smoothing on the ball anchor; fingertips jitter more than palms |
+| `pinchSmoothing` | 0.45 | Exponential smoothing on pinch distance |
+| `pinchAnchorTight` / `pinchAnchorOpen` | 0.10 / 0.22 | Where the anchor blend starts and ends |
+| `pinchMinDistance` / `pinchMaxDistance` | 0.05 / 0.32 | Fully pinched / fully open, for the size curve |
 | `scaleMapping` | `0.5 + norm * 2.6` | Pinch to ball scale curve |
 | `powerRamp` | 0.15 /frame | Fist charge ease rate |
+| `pickupRadius` | 0.10 + scale x 0.055 | Reach needed to pick a parked ball up |
+| `pickupDwell` / `grabDwell` / `releaseGrace` | 0.12 / 0.08 / 0.12 s | Dwell timers on the carry transitions |
+| `carryLostGrace` | 0.4 s | Hands gone this long parks the ball where it is |
 
 Note on mirroring: the camera preview is mirrored so it feels like a mirror, which is standard for webcam UI. The landmark to world space mapping flips the x axis to compensate. The old app deliberately did not mirror, so this is an intentional difference and any position mapping bug should check this first.
 
-## 8. Hand tracking and clap detection
+### Rotational dynamics
+
+Pinch to take hold and the ball takes on your hand's own orientation, every axis
+at once, one to one. Pronate and it rolls, tilt and it tilts, turn and it turns.
+
+**Why the first two attempts failed.** Both read a single in-plane angle off the
+flat image landmarks, wrist to middle knuckle. That angle is blind to pronation,
+the palm rolling over about the forearm, which is the motion the gesture is
+actually made of: rotating the hand about that axis leaves the wrist-to-knuckle
+line unmoved on screen. Measured against a synthetic hand pronated 55 degrees,
+the old signal reports **0.0 degrees** and the new one reports **55.0**. No gain
+or threshold could have fixed that, because the signal was not there. Raising
+`rollGain` to 2.6 made it worse in a second way: a multiplier makes the ball's
+rotation *proportional* to your hand rather than *aligned* with it.
+
+MediaPipe returns metric 3D landmarks alongside the image ones on every frame,
+and always has. `handOrientation` builds a rotation from two spans of the hand,
+wrist to middle knuckle and index knuckle to little knuckle, orthonormalised by
+Gram-Schmidt with the third axis from their cross product.
+
+**What counts as having hold of it.** Three conditions, and the first two exist
+because leaving them out made the ball spin wildly during two gestures that have
+nothing to do with rotation:
+
+| Condition | Why |
+|---|---|
+| not a fist | Curling the hand puts the thumb tip beside the index tip, so a fist measures as a *maximum* pinch. Power mode therefore grabbed the ball and it rode the fist. `handAnchor` excludes fists for the same reason. |
+| exactly one hand | `sorted` is ordered by palm x and re-sorted every frame, so with two hands up, crossing them swaps which hand slot 0 refers to and the orientation jumps to a different hand entirely. This matches how `charging` is already gated. |
+| not carried | Two fists are the carry grab, and the release grace can leave that state with one hand still up. |
+
+The grip also has separate take-hold and let-go thresholds, `gripEnter` 0.3 and
+`gripExit` 0.12. Turning your hand changes how the thumb and finger project, so
+the measured pinch moves while you twist even though your fingers have not;
+against a single threshold that flickers, and each flicker cost the anchor.
+
+Taking hold records both the hand's orientation and the ball's. Each frame the
+ball is set to `handNow * handAtGrip⁻¹` applied to where the ball was. Because
+it is **anchored rather than accumulated**, turning your hand back returns the
+ball exactly to where it started, and losing tracking is harmless: the anchor is
+simply retaken, so the ball keeps its orientation and your current pose becomes
+the new reference. A dropout can neither jerk it nor lose the turn. A grace of
+`regripGrace` keeps the original anchor across the frame or two the tracker
+usually drops, so an uninterrupted turn stays uninterrupted.
+
+There is no momentum. The ball stops the instant you let go, because a flywheel
+fought the point of the gesture: the orientation you released it at is the one
+you chose, and coasting past it on an estimated angular velocity threw that away
+and read as the ball spasming.
+
+Range is not capped by your wrist, since letting go and taking hold again
+carries on from where it stopped.
+
+| Hand motion | Ball |
+|---|---|
+| pronation 55 deg | 55.0 deg |
+| yaw 40 deg | 40.0 deg |
+| pitch 30 deg | 30.0 deg |
+| compound turn 65 deg | 65.0 deg |
+
+`AXIS` in `orientation.ts` maps MediaPipe's space (x right, y down) onto the
+mirrored, y-up space the renderer uses. It flips x and y, which is a rotation by
+pi about z and therefore proper, so the basis stays right-handed. If an axis
+ever reads inverted, signs must be flipped **in pairs**: flipping one makes it a
+reflection and the whole rotation comes out mirrored.
+
+Orientation is applied to the ball's `body` group, since `root` already carries
+position and the shockwave's palm-axis alignment.
+
+## 8. Hand tracking and trigger detection
 
 ### MediaPipe landmark mapping
 
@@ -177,30 +292,88 @@ MediaPipe returns a fixed 21 point topology per hand. The old app used Apple Vis
 | Ring MCP / tip | 13 / 16 |
 | Little MCP / tip | 17 / 20 |
 
-Palm centre is the average of the wrist and the four MCP knuckles. Separation between two palms is Euclidean distance with an aspect ratio correction on x, since normalized coordinates are not square.
+Palm centre weights the four MCP knuckles above the wrist. Averaging them evenly drags the point down toward the heel of the hand, so the ball sat noticeably lower than where the palm looks centred. Separation between two points is Euclidean distance with an aspect ratio correction on x, since normalized coordinates are not square.
 
-### Detection algorithm
+### Why the clap was replaced
 
-Ported from `CameraManager.swift`, kept as the fast first pass:
+The clap did not work, and the reason was not tuning. Replaying the live detector and the trained model over the 288 recorded clips measured three failures that multiplied:
+
+| Stage | Measured |
+|---|---|
+| `ClapDetector` recall, the gate the model sits behind | 51.9% |
+| Model confirm, given the window inference actually feeds it | 63.0% |
+| Summon needing two of those inside 1.5s | squares it |
+
+End to end that is about a 10.7% chance a summon attempt worked.
+
+**The gate could not open.** `armed` required `spread > 0.55`, an absolute threshold carried over from Apple's coordinate space. Both `crossingFire` and the dropped-hand fallback required it. Loading the classifier was supposed to widen the geometric pass, but `CLAP_LOOSE` only relaxes velocities and `openThreshold` lives in `CLAP_BASE`, so recall with the model loaded was identical to 0.1 of a percent.
+
+**The model was fed a window it had never seen.** The recorder captures `CLASSIFIER.postRoll` frames *after* the trigger, so training clips carry the event at index ~20 of 32 with 12 frames of aftermath. Live, `classifyClap` took the trailing 32 frames ending *at* the trigger. Training augmentation jitters ±3 frames; the gap was 12. Running the exported weights both ways over the same clips:
+
+| Alignment | clap | near_miss |
+|---|---|---|
+| As trained | mean 0.973, fires 100.0% | mean 0.073, fires 4.6% |
+| As served | mean 0.603, fires 63.0% | mean 0.501, fires **50.8%** |
+
+The tail is where a clap separates from a near miss. Without it the model is near a coin flip in both directions, which is also where the random dismissals came from.
+
+**And the gesture itself is hostile to the tracker.** Two hands are reported only 6.6% of the time while they are touching, against 63–76% once they are apart. A clap hides its decisive instant in the tracker's blind spot:
+
+| Palm separation | Frames | Two hands tracked |
+|---|---|---|
+| touching, < 0.15 | 2935 | 6.6% |
+| 0.15 – 0.25 | 482 | 63.5% |
+| 0.25 – 0.35 | 715 | 76.4% |
+| 0.35 – 0.50 | 933 | 63.1% |
+
+One hand is reported 93.8% of the time, and `curl` is the steadiest signal in the feature set at 0.65% frame-to-frame jitter against 1.23% for palm separation. So the summon moved to one hand, and the dismiss stopped requiring contact.
+
+### Summon: `bloomDetector`
 
 ```
-each frame:
-  if two hands present:
-    spread = separation(palmA, palmB)      aspect corrected, smoothed
-    if spread > clapOpenThreshold: armed = true
-    closingFast = (lastSpread - spread) / dt > clapClosingVelocity
-    closedFromArmed = armed and spread < clapCloseThreshold
-    if (closedFromArmed or closingFast) and now - lastClap > clapDebounce:
-      emit clap candidate; armed = false
-  else if hands dropped below 2:
-    # motion blur during a fast clap often loses tracking mid motion
-    if armed and lastSpread < clapOpenThreshold * 0.85
-       and now - lastTwoHandTime < 0.5
-       and now - lastClap > clapDebounce:
-      emit clap candidate
+each frame, hidden mode only:
+  if no hand for longer than loseTimeout:  forget the held fist
+  if isFist:                               arm once held for armDwell
+  else if armed:
+    if longer than releaseWindow since the fist broke:  abandon
+    if curl <= openCurl:                                summon
 ```
 
-The dropped tracking fallback matters. Fast claps blur, hands overlap, and the tracker loses one or both. Without this branch the fastest and most deliberate claps are exactly the ones that fail to register.
+`isFist` is deliberately the same predicate that drives power mode rather than a threshold on `fistCurlScore`. Real fists score around 0.45 and open hands reach 0.30, so any threshold between them is thin, and sharing the predicate means the summon and the charge can never disagree about what a fist is. The continuous `curl` is used only for the openness ramp.
+
+Nothing here contends with power mode. `charging` is evaluated inside the active-mode block, so a fist means nothing while the ball is hidden, which is the only time this detector runs.
+
+### Dismiss: `squashDetector`
+
+Two open palms converging on the ball. Contact is neither required nor waited for: it fires around 133ms *before* the closest approach, with 93% of fires landing while the hands are still more than 0.15 apart, which is the separation below which the tracker stops reporting two hands at all.
+
+It also no longer has to tell a clap from a near miss. Both are deliberate converges and both should dismiss, which collapses the problem the classifier existed to solve back into geometry. Swept against the recorded clips, scoring every clap and near miss as a dismiss and every wave, rest and other gesture as a miss:
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `closeRatio` | 0.8 | Fraction of the widest recent opening that starts a converge |
+| `minOpenSpread` | 0.15 | Below this the opening is tracker noise |
+| `minTravel` | 0.12 | Ground a converge must cover to be a gesture |
+| `minClosingSpeed` | 0.5 | Floor that keeps steering drift from dismissing |
+| `openWindow` | 2.0 s | Span the widest opening is remembered over |
+| `reopenRatio` | 0.95 | Drifting back out this far abandons the converge |
+| `debounce` | 0.6 s | Minimum gap between dismissals |
+
+That catches **79.5%** of deliberate converges with **zero** false fires across all 142 negatives. Recall is a lower bound: the clips are 32 frames with two hands present only a third of the time, so the widest opening is often never established, where live it runs on continuous history. `minClosingSpeed` is the one value carrying safety margin rather than measured need — no recorded negative comes near it, but two open hands steering the ball can drift together slowly, and that drift must never dismiss.
+
+As with the recorder's approach detector, nothing is an absolute distance. Everything is a ratio against the widest opening actually observed, so it calibrates to how far apart you really hold your hands.
+
+### Ideas kept from the clap detector
+
+**Speed is measured across a window.** A single frame at 30fps is a 33ms sample of a noisy signal. Thresholds against it mean nothing.
+
+**Re-acquired hands are ignored.** Smoothing snaps rather than glides on large jumps, so a hand lost and found somewhere else produces an enormous apparent closing speed. `stableFrames` counts clean two-hand frames and resets on any snap.
+
+**The event carries the palm midpoint and the palm to palm axis.** The dismissal flings the ball into that point and squashes it along that axis, so it looks like it caught something rather than like the ball folded up nearby.
+
+**Two fists never fire.** That is the carry grab, and carrying the ball into your own hands would otherwise read as a squash.
+
+`clapDetector.ts` is still in the tree. It no longer drives the ball; it supplies `spread` and `closingVelocity` for the feature buffer and the HUD, which the recorder still needs.
 
 Hands are sorted by x position each frame for stable left and right slots, because tracking order is not guaranteed frame to frame. MediaPipe also returns a handedness label which may be more robust, but it can read inverted depending on mirroring, so it is a refinement to validate rather than a requirement.
 
@@ -216,25 +389,50 @@ The geometric detector stays as the first pass because it is instant and already
 
 ### Data collection
 
-`src/dev/RecordRoute.tsx` is a development only mode that runs the exact same MediaPipe pipeline as production. This matters: recording with a different pipeline than inference is the fastest way to build a model that scores well in training and fails live.
+`src/dev/RecordRoute.tsx` is a development only mode that runs the exact same MediaPipe pipeline as production. This matters: recording with a different pipeline than inference is the fastest way to build a model that scores well in training and fails live. It runs with `emitClaps` off so collecting a hundred claps never fights the live state machine.
 
-Each clip is a fixed window of roughly 20 frames, about 600ms at 30fps, capturing 2 hands × 21 landmarks × 3 coordinates. Clips are labeled on save and downloaded as JSON into `training/record_export/`.
+**Clips are captured automatically.** Whenever the geometric detector proposes a candidate, the recorder saves the window and tags it with whichever label is currently selected. The original spacebar flow could not work: you clap, then react, and by the time the key is down the motion has already scrolled out of the buffer. Space is still there for classes that never trip the detector, like resting hands, which the model needs just as much.
+
+Clips are centred on the candidate rather than trailing it. The buffer runs `bufferFrames` long and the capture happens `postRoll` frames after the candidate fires, so a clip contains the approach, the contact and the tail.
 
 | Label | Target count | What to record |
 |---|---|---|
-| `clap` | 60 to 100 | Real claps. Vary speed, distance from camera, lighting, starting hand positions |
-| `near_miss` | 50 to 80 | Hands coming close but not clapping |
-| `wave` | 40 to 60 | Waving, which geometrically resembles a fast approach |
-| `rest` | 30 to 50 | Hands visible and still |
-| `other_gesture` | 30 to 60 | Pointing, pinching, fists, anything else |
+| `clap` | 80 | Real claps. Vary speed, distance from camera, lighting, starting hand positions |
+| `near_miss` | 65 | Hands coming close but not clapping. Include two fisted carries |
+| `wave` | 50 | Waving, which geometrically resembles a fast approach |
+| `rest` | 40 | Hands visible and still |
+| `other_gesture` | 45 | Pointing, pinching, fists, anything else |
 
-Roughly 200 to 350 clips total. The negatives outnumber the positives on purpose. The failure mode that actually hurts is a false positive on ordinary hand movement, not a missed clap against a blank background.
+Roughly 280 clips. The negatives outnumber the positives on purpose. The failure mode that actually hurts is a false positive on ordinary hand movement, not a missed clap against a blank background. Training applies class weighting so the model cannot score well by simply never saying clap.
+
+Export writes one JSON file holding every clip, rather than one download per clip. The file carries its own window length and feature order, so `train.py` reads the shape from the data and the Python and TypeScript constants cannot drift apart.
 
 ### Features and training
 
-Raw landmark sequences are a poor fit for a model trained on a few hundred clips. Instead, each frame is normalized by recentering on the midpoint between the wrists and scaling by an estimated hand size reference, then the same engineered signals the geometric detector already computes, which are spread, closing velocity, pinch distance, and fist curl score, are collected across the window. Feeding these inherits the signal engineering that is already validated rather than asking a small network to rediscover it.
+Each frame contributes the engineered signals the geometric detector already computes, rather than raw landmarks. A few hundred clips is nowhere near enough for a model to rediscover that signal engineering, and it is already validated.
 
-Training runs in `training/train.py` with Keras, using a small dense or 1D convolutional network, a train and validation split, and heavy augmentation given the small dataset: time jitter on the window start, left right mirroring, and coordinate noise. `training/convert_to_tfjs.py` runs the `tensorflowjs_converter` to produce `model.json` plus weight shards into `public/models/clap-classifier/`.
+| Feature | Why |
+|---|---|
+| `spread` | Palm to palm distance, the core clap signal |
+| `closingVelocity` | Windowed closing rate |
+| `pinch` | Distinguishes a pinch from an approach |
+| `curl` | Fist curl on the first hand |
+| `curlB` | Fist curl on the second hand, so a two fisted carry is separable from a clap |
+| `handCount` | A hand dropping out at contact is itself a strong clap signal |
+
+`window` is 32 frames, about one second at 30fps. The spec lives in `CLASSIFIER` in `src/state/types.ts` and nowhere else.
+
+Training runs in `training/train.py` with Keras: a small dense network, a stratified train and validation split, class weighting, and augmentation by coordinate noise and time jitter on the window start.
+
+There is deliberately no horizontal mirror augmentation. An earlier version mirrored clips by negating the closing velocity while keeping the positive label, which is wrong. Mirroring a clap does not make the hands travel apart, the spread still shrinks. All it taught the model was that hands flying apart are a clap, which is the exact false positive this layer exists to prevent.
+
+`training/convert_to_tfjs.py` runs the `tensorflowjs_converter` to produce `model.json` plus weight shards into `public/models/clap-classifier/`. The input format is `keras_keras` and the output format is `tfjs_layers_model`. Both halves matter. `keras` means an HDF5 file from Keras 2, and a Keras 3 `.keras` file is a zip archive, so it fails with an unhelpful "file signature not found" from inside h5py; `keras_keras` is the Keras 3 format. On the output side, a `tf_saved_model` input can only produce a graph model, and the browser calls `tf.loadLayersModel`, which cannot read one. Getting either wrong produces a model that trains fine and then silently fails to load.
+
+Use a virtualenv on Python 3.11. TensorFlow has no wheels for 3.13, and the pyenv 3.12 on this machine was built against an `openssl@1.1` that Homebrew has removed, so it has no `ssl` module and pip cannot reach PyPI at all.
+
+Two version pins in `requirements.txt` look wrong and are not. `tensorflowjs` imports `tensorflow_decision_forests` at module load even though nothing here uses decision forests, and its generated code needs a protobuf runtime of 6.31.1 or newer while TensorFlow pins protobuf below 6. A newer runtime can read older generated code, so 6.31.1 satisfies both, and pip's conflict warning about it can be ignored. Separately, `tensorflow_hub` imports `pkg_resources`, which setuptools 81 removed, so setuptools is held below that.
+
+The converted model is committed. `scripts/fetch-models.sh` does not touch that folder and it is not gitignored, so it deploys to Vercel as part of the repo.
 
 Expect at least one iteration. Record, train, test live, notice which class produces errors, record more of that class, retrain.
 
@@ -268,7 +466,7 @@ The old app's likely fatal bug was a transparent native view failing to composit
 
 ## 11. HUD specification
 
-The old HUD was genuinely well designed and is not the "AI slop" part of the project. Its restraint is worth carrying forward even though the visual execution is being redone: a small fixed palette, hairline strokes instead of glow everywhere, technical typography, camera style registration marks in the corners, and live numeric readouts.
+The old HUD was genuinely well designed and is not the weak part of the project. Its restraint is worth carrying forward even though the visual execution is being redone: a small fixed palette, hairline strokes instead of glow everywhere, technical typography, camera style registration marks in the corners, and live numeric readouts.
 
 Palette tokens carried forward:
 
@@ -286,14 +484,14 @@ Component inventory to build: title block, sheet stamp with clock, status column
 
 The HUD is a full screen non interactive overlay with `pointer-events: none`, mirroring the old `.allowsHitTesting(false)`.
 
-### How the design skills get used
+### How the HUD gets designed
 
 This is a build step, not a styling note. After the pipeline works end to end with placeholder debug text:
 
-1. Invoke `hallmark` with the three reference images and a written brief covering the palette tokens, the component inventory, the font constraint, and the fact that the HUD is a live overlay bound to real state rather than a static mockup. `hallmark` handles design extraction from screenshots, which is exactly the task.
-2. Run `design-taste-frontend` as a second audit pass over the result, since it is audit first on redesigns, to catch anything that still reads as templated.
+1. Work from the three reference frames and a written brief covering the palette tokens, the component inventory, the font constraint, and the fact that the HUD is a live overlay bound to real state rather than a static mockup. The last point is the one that matters most: a HUD is not a mockup, and every readout has to be tied to something the app actually knows.
+2. Audit the result as a second pass, deliberately separate from making it, and cut anything that reads as templated rather than designed.
 
-Do not hand roll the HUD first and polish it afterward. The skills generate the component structure and CSS.
+Do not hand roll the HUD first and polish it afterward. Settle the component structure and the token set before writing the CSS.
 
 ## 12. Deployment
 
@@ -318,7 +516,7 @@ GitHub setup uses the already authenticated `gh` CLI. Connecting the repository 
 | M3 | State machine on a CSS placeholder | Full mode cycle works before touching 3D |
 | M4 | Three.js ball in isolation | Visually matches reference images |
 | M5 | Full pipeline wiring, ball over video | Alpha compositing verified, no black background |
-| M6 | HUD via `hallmark` then `design-taste-frontend` | Replaces debug text, reads as designed not templated |
+| M6 | HUD design pass, then an audit pass | Replaces debug text, reads as designed not templated |
 | M7 | Dataset collection via RecordRoute | 200 to 350 labeled clips across sessions |
 | M8 | Classifier training and integration | Measurably fewer false positives than M2 baseline |
 | M9 | Polish, optional 3D panels, perf profiling | Holds frame rate with everything running |

@@ -1,44 +1,79 @@
-/* Hallmark · component: start-gate · genre: atmospheric · theme: instrument
- * states: default · hover · focus-visible · active · disabled · busy · error
+/* The entry gate: the one interactive surface in the app.
+ *
+ * The start button carries all eight states — default, hover, focus-visible,
+ * active, disabled, loading, error, success — because it is the only control
+ * here and every one of those is reachable.
  */
 
 .gate {
   position: absolute;
   inset: 0;
-  z-index: var(--z-hud);
+  z-index: var(--z-gate);
   display: grid;
   place-items: center;
-  padding: var(--space-lg);
-  background: var(--color-void);
-  font-family: var(--font-label);
+  padding:
+    max(var(--space-xl), env(safe-area-inset-top))
+    max(var(--space-lg), env(safe-area-inset-right))
+    max(var(--space-xl), env(safe-area-inset-bottom))
+    max(var(--space-lg), env(safe-area-inset-left));
+  background: var(--color-gate-ground);
+  font-family: var(--font-display);
   color: var(--color-blueprint);
+  overflow: clip;
 }
 
+/* No accent stripe down one edge. That side-stripe card is one of the most
+ * recognisable generated-UI tells, and it was on this panel, the HUD title and
+ * the error block. A rule across the top does the same job as a landmark. */
 .gate__panel {
-  width: min(30rem, 100%);
-  padding: var(--space-xl);
-  border: var(--rule-hair) solid var(--color-hairline);
-  border-left: 2px solid var(--color-phosphor);
-  background: var(--color-plate);
+  /* Positioned so it shares a paint order with the absolutely-positioned
+   * bezel rather than sitting under it. Belt and braces with the bezel's
+   * pointer-events: none. */
+  position: relative;
+  width: min(31rem, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: var(--space-lg);
+  border-top: 2px solid var(--color-phosphor);
+  border-inline: var(--rule-hair) solid var(--color-hairline);
+  border-bottom: var(--rule-hair) solid var(--color-hairline);
+  background: var(--color-scrim-panel);
 }
 
+/* Stacked, never side by side. A mono-cap label sitting to the left or right
+ * of a heading on the same row is the templated-editorial tell; the label goes
+ * directly underneath, in the same column. */
+.gate__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+}
 .gate__wordmark {
   margin: 0;
-  font-size: 1.75rem;
+  font-size: var(--text-gate);
   font-weight: 600;
   font-style: normal;
   letter-spacing: var(--track-title);
   text-transform: uppercase;
-  line-height: 1;
+  line-height: 1.05;
   overflow-wrap: anywhere;
+  min-width: 0;
+}
+.gate__sub {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--color-dim);
 }
 
 .gate__lede {
-  margin-top: var(--space-md);
-  max-width: 48ch;
+  margin: var(--space-md) 0 0;
+  max-width: 60ch;
   font-family: var(--font-mono);
   font-size: var(--text-micro);
-  line-height: 1.7;
+  line-height: 1.75;
   color: var(--color-dim);
 }
 
@@ -46,7 +81,6 @@
   margin: var(--space-lg) 0 0;
   border-top: var(--rule-hair) solid var(--color-hairline);
 }
-
 .gate__move {
   display: flex;
   align-items: baseline;
@@ -55,14 +89,13 @@
   padding: var(--space-xs) 0;
   border-bottom: var(--rule-hair) solid var(--color-hairline);
 }
-
 .gate__move dt {
   font-size: var(--text-label);
+  font-weight: 500;
   letter-spacing: var(--track-label);
   text-transform: uppercase;
   color: var(--color-blueprint);
 }
-
 .gate__move dd {
   margin: 0;
   font-family: var(--font-mono);
@@ -70,62 +103,115 @@
   letter-spacing: var(--track-label);
   text-transform: uppercase;
   color: var(--color-phosphor);
+  white-space: nowrap;
 }
 
 .gate__error {
-  margin-top: var(--space-md);
+  margin: var(--space-md) 0 0;
   padding: var(--space-sm);
-  border-left: 2px solid var(--color-amber);
+  border-top: 2px solid var(--color-amber);
   font-family: var(--font-mono);
   font-size: var(--text-micro);
-  line-height: 1.6;
+  line-height: 1.65;
   color: var(--color-amber);
   overflow-wrap: anywhere;
 }
 
+/* ---- The one control on the page. All eight states. -------------------- */
 .gate__start {
+  --gate-ink: var(--color-phosphor);
   margin-top: var(--space-lg);
   width: 100%;
+  min-height: 44px; /* touch-target floor */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
   padding: var(--space-sm) var(--space-md);
-  border: var(--rule-hair) solid var(--color-phosphor);
+  border: var(--rule-hair) solid var(--gate-ink);
+  outline: 2px solid transparent; /* reserved, so focus never shifts layout */
+  outline-offset: 3px;
   background: transparent;
-  color: var(--color-phosphor);
-  font-family: var(--font-label);
+  color: var(--gate-ink);
+  font-family: var(--font-display);
   font-size: var(--text-value);
   font-weight: 600;
   letter-spacing: var(--track-label);
   text-transform: uppercase;
-  white-space: nowrap;
+  white-space: nowrap; /* an affordance is a one-line object */
   cursor: pointer;
   transition:
     background-color var(--dur-short) var(--ease-out),
     color var(--dur-short) var(--ease-out),
-    transform 100ms var(--ease-out);
+    border-color var(--dur-short) var(--ease-out),
+    transform var(--dur-micro) var(--ease-out);
 }
 
-.gate__start:hover {
-  background: var(--color-phosphor);
-  color: var(--color-void);
+@media (hover: hover) and (pointer: fine) {
+  .gate__start:hover:not(:disabled) {
+    background: var(--gate-ink);
+    color: var(--color-gate-ground);
+  }
 }
 
-/* Never transitioned: a ring that fades in leaves keyboard users with nothing. */
+/* Never transitioned: a ring that fades in leaves keyboard users with nothing
+ * to see at the moment they need it. */
 .gate__start:focus-visible {
-  outline: 2px solid var(--color-phosphor);
-  outline-offset: 3px;
+  outline-color: var(--color-focus);
 }
 
-.gate__start:active {
+.gate__start:active:not(:disabled) {
   transform: translateY(1px);
 }
 
 .gate__start:disabled {
-  border-color: var(--color-dim);
-  color: var(--color-dim);
+  cursor: not-allowed;
+}
+
+.gate__start[data-state="loading"] {
+  --gate-ink: var(--color-dim);
   cursor: progress;
+}
+.gate__start[data-state="error"] {
+  --gate-ink: var(--color-amber);
+}
+.gate__start[data-state="success"] {
+  --gate-ink: var(--color-phosphor);
+  background: var(--color-phosphor);
+  color: var(--color-gate-ground);
+}
+
+/* The spinner occupies a reserved slot so the label never shifts when it
+ * appears. Hidden by default rather than absent. */
+.gate__spinner {
+  flex: none;
+  width: 11px;
+  height: 11px;
+  border: var(--rule-hair) solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  opacity: 0;
+}
+.gate__start[data-state="loading"] .gate__spinner {
+  opacity: 1;
+  animation: gate-spin 700ms linear infinite;
+}
+.gate__start[data-state="success"] .gate__spinner {
+  opacity: 1;
+  border-radius: 0;
+  border-color: transparent;
+  border-bottom-color: currentColor;
+  border-left-color: currentColor;
+  transform: rotate(-45deg) scale(0.9);
+}
+@keyframes gate-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .gate__note {
-  margin-top: var(--space-sm);
+  margin: var(--space-sm) 0 0;
   font-family: var(--font-mono);
   font-size: var(--text-micro);
   text-align: center;
@@ -133,10 +219,20 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .gate__start { transition-duration: 1ms; }
+  .gate__start {
+    transition-duration: 1ms;
+  }
+  /* Functional motion still runs; it is the only signal that work is happening. */
+  .gate__start[data-state="loading"] .gate__spinner {
+    animation-duration: 1400ms;
+  }
 }
 
-@media (max-width: 480px) {
-  .gate__panel { padding: var(--space-md); }
-  .gate__wordmark { font-size: 1.375rem; }
+@media (max-width: 30rem) {
+  .gate__panel {
+    padding: var(--space-md);
+  }
+  .gate__moves {
+    margin-top: var(--space-md);
+  }
 }

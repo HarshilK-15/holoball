@@ -2,3 +2,26 @@ tensorflow>=2.16
 tensorflowjs>=4.22
 scikit-learn>=1.5
 numpy>=1.26
+
+# Two pins that look wrong and are not. Both were found by running the pipeline
+# end to end; without them the converter dies rather than producing a model.
+#
+# protobuf: tensorflowjs imports tensorflow_decision_forests at module load,
+# even though nothing here uses decision forests. Its generated code needs a
+# protobuf runtime of 6.31.1 or newer, while TensorFlow pins protobuf below 6.
+# A newer runtime can read older generated code, so 6.31.1 satisfies both.
+# Do not go to protobuf 7, which removes APIs TensorFlow still calls.
+#
+# Because of that pin, `pip install -r requirements.txt` in one shot now fails
+# outright with ResolutionImpossible rather than warning. Install in stages:
+#
+#   pip install "tensorflow>=2.16" "scikit-learn>=1.5" "numpy>=1.26"
+#   pip install "tensorflowjs>=4.22"
+#   pip install "protobuf==6.31.1" "setuptools<81"
+#
+# The last step prints a conflict warning about protobuf. That one is expected;
+# the converter works, and this is the combination that produced a model.
+protobuf==6.31.1
+
+# setuptools: tensorflow_hub imports pkg_resources, which setuptools 81 removed.
+setuptools<81

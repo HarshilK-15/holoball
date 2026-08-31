@@ -21,3 +21,7 @@ training/saved_model/
 # Large MediaPipe binaries, restored by scripts/fetch-models.sh
 public/wasm/
 public/models/hand_landmarker.task
+.devserve/
+
+# Session working notes, private like README.private.md
+SESSION-LOG.md
