@@ -1,6 +1,6 @@
 # Holoball
 
-Clap your hands and a holographic ball appears over your camera feed. Move your hand to steer it, pinch to resize it, make a fist to charge it up, then clap once more to crush it.
+A holographic ball appears over your camera feed. Move your hand to steer it, pinch to resize it, make a fist to charge it up, then clap once to crush it.
 
 Runs entirely in the browser. Nothing you do in front of the camera leaves your machine.
 
